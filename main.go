@@ -39,9 +39,10 @@ func showMainMenu() {
 		fmt.Println("1. 添加程序到自启动")
 		fmt.Println("2. 移除程序的自启动")
 		fmt.Println("3. 查看当前自启动状态")
-		fmt.Println("4. 退出")
+		fmt.Println("4. 添加命令到自启动")
+		fmt.Println("5. 退出")
 		fmt.Println(strings.Repeat("=", 60))
-		fmt.Print("请选择操作 (1-4): ")
+		fmt.Print("请选择操作 (1-5): ")
 
 		reader := bufio.NewReader(os.Stdin)
 		choice, _ := reader.ReadString('\n')
@@ -55,6 +56,8 @@ func showMainMenu() {
 		case "3":
 			showStartupStatus()
 		case "4":
+			handleAddCommand()
+		case "5":
 			fmt.Println("再见！")
 			return
 		default:
@@ -593,4 +596,102 @@ func IsInStartup(exePath, appName string) (bool, error) {
 	valueAbs, _ := filepath.Abs(value)
 
 	return absPath == valueAbs, nil
+}
+
+// handleAddCommand 处理添加自定义命令
+func handleAddCommand() {
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Println("添加自定义命令到自启动")
+	fmt.Println(strings.Repeat("=", 60))
+
+	reader := bufio.NewReader(os.Stdin)
+
+	// 步骤1：输入注册表项名称
+	fmt.Print("请输入注册表项名称（如 TaskManager）: ")
+	appName, _ := reader.ReadString('\n')
+	appName = strings.TrimSpace(appName)
+
+	if appName == "" {
+		fmt.Println("名称不能为空。")
+		return
+	}
+
+	// 检查是否已存在
+	exists, _ := IsCommandInStartup(appName)
+	if exists {
+		fmt.Printf("\n注册表项 '%s' 已存在。\n", appName)
+		fmt.Print("是否要覆盖？(y/n): ")
+		confirm, _ := reader.ReadString('\n')
+		confirm = strings.TrimSpace(strings.ToLower(confirm))
+		if confirm != "y" && confirm != "yes" {
+			return
+		}
+	}
+
+	// 步骤2：输入启动命令
+	fmt.Println("\n请输入完整的启动命令：")
+	fmt.Println("示例：python E:\\project\\python\\task-manager\\main.py")
+	fmt.Println("示例：E:\\app\\program.exe --arg value")
+	fmt.Print("命令: ")
+
+	command, _ := reader.ReadString('\n')
+	command = strings.TrimSpace(command)
+
+	if command == "" {
+		fmt.Println("命令不能为空。")
+		return
+	}
+
+	// 确认添加
+	fmt.Printf("\n确定要将以下内容添加到自启动吗？\n")
+	fmt.Printf("注册表项名称: %s\n", appName)
+	fmt.Printf("命令: %s\n", command)
+	fmt.Print("确认添加？(y/n): ")
+
+	confirm, _ := reader.ReadString('\n')
+	confirm = strings.TrimSpace(strings.ToLower(confirm))
+	if confirm == "y" || confirm == "yes" {
+		err := AddCommandToStartup(command, appName)
+		if err != nil {
+			fmt.Printf("添加失败: %v\n", err)
+			showMessageBox("错误", fmt.Sprintf("添加失败: %v", err), 0x00000010)
+		} else {
+			fmt.Printf("已成功将命令添加到自启动！\n")
+			showMessageBox("成功", fmt.Sprintf("已成功添加 '%s' 到自启动", appName), 0x00000040)
+		}
+	}
+}
+
+// AddCommandToStartup 添加自定义命令到Windows自启动
+func AddCommandToStartup(command, appName string) error {
+	key, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("打开注册表失败: %v", err)
+	}
+	defer key.Close()
+
+	err = key.SetStringValue(appName, command)
+	if err != nil {
+		return fmt.Errorf("设置注册表值失败: %v", err)
+	}
+
+	return nil
+}
+
+// IsCommandInStartup 检查注册表项是否已存在
+func IsCommandInStartup(appName string) (bool, error) {
+	key, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.QUERY_VALUE)
+	if err != nil {
+		return false, fmt.Errorf("打开注册表失败: %v", err)
+	}
+	defer key.Close()
+
+	_, _, err = key.GetStringValue(appName)
+	if err == nil {
+		return true, nil
+	}
+	if err == registry.ErrNotExist {
+		return false, nil
+	}
+	return false, fmt.Errorf("查询注册表失败: %v", err)
 }
